@@ -1,0 +1,11 @@
+---
+
+- name: Network Getting Started First Playbook
+  connection: network_cli
+  gather_facts: true
+  hosts: all
+  tasks:
+
+    - name: Display the config
+      debug:
+        msg: "The hostname is {{ ansible_hostname }}"
