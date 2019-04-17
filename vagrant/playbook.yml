@@ -2,10 +2,18 @@
 
 - name: Network Getting Started First Playbook
   connection: network_cli
-  gather_facts: true
+  gather_facts: false
   hosts: all
   tasks:
-
-    - name: Display the config
-      debug:
-        msg: "The hostname is {{ ansible_hostname }}"
+    - name: install packages
+      become: yes
+      apt:
+        name:
+          - ntp
+          - ntpdate
+          - curl
+          - jq
+          - python
+          - python-dev
+          - libpq-dev
+        state: present
