@@ -2,18 +2,97 @@
 
 - name: Network Getting Started First Playbook
   connection: network_cli
-  gather_facts: false
+  gather_facts: true
   hosts: all
   tasks:
+    - set_fact:
+        mask_cidr: "{{ ip | ipaddr('net') }}"
+      vars:
+        ip: "{{ ansible_default_ipv4.network }}/{{ ansible_default_ipv4.netmask }}"
     - name: install packages
       become: yes
       apt:
         name:
           - ntp
-          - ntpdate
           - curl
-          - jq
           - python
           - python-dev
-          - libpq-dev
+          - less
+          - policykit-1
         state: present
+    # - name: reload service ntp
+    #   systemd:
+    #     name: ntp
+    #     state: reloaded
+    - name: Add an PostgreSQL apt signing key
+      become: yes
+      apt_key:
+        url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+        state: present
+    - name: Add PostgreSQL repo
+      become: yes
+      apt_repository:
+        repo: deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main
+        state: present
+    - name: set timezone to Europe/Moscow
+      timezone:
+        name: Europe/Moscow
+      become: yes
+      become_method: sudo
+    - name: Ensure a ru_RU.UTF-8 locale exists
+      locale_gen:
+        name: ru_RU.UTF-8
+        state: present
+      become: yes
+    - name: install Postgres packages
+      become: yes
+      apt:
+        name:
+          - postgresql-9.4
+          - postgresql-client-9.4
+          - postgresql-contrib-9.4
+          - postgresql-server-dev-9.4
+        state: present
+    - name: turning off postgresql autostart from config
+      become: yes
+      lineinfile:
+        dest: /etc/postgresql/9.4/main/start.conf
+        regexp: '^auto'
+        line: 'manual'
+    - name: disable postgresql service autostart (will be managed by Patroni)
+      become: yes
+      service:
+        name: postgresql
+        enabled: no
+    # - debug:
+    #     msg: "{{isSlave}}"
+    - name: stop postgresql service on slave (will be managed by Patroni)
+      become: yes
+      service:
+        name: postgresql
+        state: stopped
+      # when: isSlave
+    - name: Clean artifact path on slave
+      become: yes
+      file:
+        state: absent
+        path: /var/lib/postgresql/9.4/main
+      # when: isSlave
+    - name: copying file pg_hba
+      become: yes
+      template:
+        src: pg_hba.j2
+        dest: /etc/postgresql/9.4/main/pg_hba.conf
+        owner: postgres
+    - name: add `postgres` user to sudoers
+      become: yes
+      user:
+        name: postgres
+        groups: sudo
+        append: yes
+    - name: cloning etcd project
+      git:
+        repo: 'https://github.com/etcd-io/etcd.git'
+        dest: /tmp/etcd/
+        version: v3.3.10
+
