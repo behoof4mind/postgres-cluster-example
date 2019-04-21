@@ -9,8 +9,6 @@
         mask_cidr: "{{ ip | ipaddr('prefix') }}"
       vars:
         ip: "{{ ansible_default_ipv4.network }}/{{ ansible_default_ipv4.netmask }}"
-    - debug:
-        msg: "{{ hostvars['node1'].ansible_ssh_host }}/{{ mask_cidr }}"
     - name: install packages
       become: yes
       apt:
@@ -23,10 +21,6 @@
           - less
           - policykit-1
         state: latest
-    # - name: reload service ntp
-    #   systemd:
-    #     name: ntp
-    #     state: reloaded
     - name: Add an PostgreSQL apt signing key
       become: yes
       apt_key:
@@ -67,14 +61,11 @@
       service:
         name: postgresql
         enabled: no
-    # - debug:
-    #     msg: "{{isSlave}}"
     - name: stop postgresql service on slave (will be managed by Patroni)
       become: yes
       service:
         name: postgresql
         state: stopped
-      # when: isSlave
     - name: Clean artifact path on slave
       become: yes
       file:
@@ -93,7 +84,7 @@
         name: postgres
         groups: sudo
         append: yes
-    - name: Extract etcd into /tmp/
+    - name: Extract etcd into /tmp
       unarchive:
         src: https://github.com/etcd-io/etcd/releases/download/v3.3.10/etcd-v3.3.10-linux-amd64.tar.gz
         dest: /tmp/
@@ -245,8 +236,62 @@
         state: started
         enabled: yes
         daemon_reload: yes
-    - name: install PgBouncer
-      become: yes
-      apt:
-        name: pgbouncer 
-        state: latest
+    # - name: install HAProxy
+    #   become: yes
+    #   apt:
+    #     name: haproxy 
+    #     state: latest
+    # - name: start service haproxy and ensure it is not masked
+    #   become: yes
+    #   systemd:
+    #     name: haproxy
+    #     state: started
+    #     enabled: yes
+    # - name: downloading confd binary file
+    #   get_url:
+    #     url: https://github.com/kelseyhightower/confd/releases/download/v0.16.0/confd-0.16.0-linux-amd64
+    #     dest: /tmp/confd
+    # - name: copy confd binary file to /usr/local/bin
+    #   become: yes
+    #   become_method: sudo
+    #   copy:
+    #     src: /tmp/confd
+    #     dest: /usr/local/bin/confd
+    #     mode: u+x,g+x,o+x
+    #     remote_src: yes
+    # - name: create confd directory structure
+    #   become: yes
+    #   file:
+    #     state: directory
+    #     path: "{{ item }}"
+    #   with_items:
+    #     - '/etc/confd/conf.d'
+    #     - '/etc/confd/templates'
+    # - name: generating confd config-file
+    #   become: yes
+    #   template:
+    #     src: confd.j2
+    #     dest: /etc/confd/confd.toml
+    # - name: copy haproxy.toml config-file
+    #   become: yes
+    #   copy:
+    #     src: haproxy.toml
+    #     dest: /etc/confd/conf.d/haproxy.toml
+    # - name: copy haproxy.tmpl template-file
+    #   become: yes
+    #   become_method: sudo
+    #   copy:
+    #     src: haproxy.tmpl
+    #     dest: /etc/confd/templates/haproxy.tmpl
+    # - name: copy confd systemd service file
+    #   become: yes
+    #   copy:
+    #     src: confd.service
+    #     dest: /usr/lib/systemd/system/confd.service
+    # - name: start service confd and ensure it is not masked
+    #   become: yes
+    #   systemd:
+    #     name: confd
+    #     state: started
+    #     enabled: yes
+    #     daemon_reload: yes
