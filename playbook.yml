@@ -19,9 +19,10 @@
           - curl
           - python
           - python-dev
+          - python-pip
           - less
           - policykit-1
-        state: present
+        state: latest
     # - name: reload service ntp
     #   systemd:
     #     name: ntp
@@ -79,7 +80,7 @@
       file:
         state: absent
         path: /var/lib/postgresql/9.4/main
-      # when: isSlave
+      when: "{{ isSlave }}"
     - name: copy config-file pg_hba
       become: yes
       template:
@@ -92,11 +93,6 @@
         name: postgres
         groups: sudo
         append: yes
-    # - name: cloning etcd project
-    #   git:
-    #     repo: 'https://github.com/etcd-io/etcd.git'
-    #     dest: /tmp/etcd/
-    #     version: v3.3.10
     - name: Extract etcd into /tmp/
       unarchive:
         src: https://github.com/etcd-io/etcd/releases/download/v3.3.10/etcd-v3.3.10-linux-amd64.tar.gz
@@ -104,16 +100,20 @@
         remote_src: yes
     - name: copy etcd binary file
       become: yes
+      become_method: sudo
       copy:
         src: /tmp/etcd-v3.3.10-linux-amd64/etcd
-        dest: /usr/local/bin/
+        dest: /usr/local/bin/etcd
         mode: u+x,g+x,o+x
+        remote_src: yes
     - name: copy etcdctl binary file
       become: yes
+      become_method: sudo
       copy:
         src: /tmp/etcd-v3.3.10-linux-amd64/etcdctl
-        dest: /usr/local/bin/
+        dest: /usr/local/bin/etcdctl
         mode: u+x,g+x,o+x
+        remote_src: yes
     - name: create etcd directory
       become: yes
       file:
@@ -152,5 +152,63 @@
         state: started
         enabled: yes
       register: etcd_status
-    - debug: msg="etcd is running"
-      when: etcd_status.stdout.find("running") != -1
+    - debug: msg="Etcd service is Running"
+      when: etcd_status.status.SubState.find("running") != -1
+    - name: copy python requirements.txt file
+      become: yes
+      copy:
+        src: requirements.txt
+        dest: /tmp/requirements.txt
+    - name: install python requirements
+      pip:
+        requirements: /tmp/requirements.txt
+    - name: install Patroni
+      become: yes
+      pip:
+        name:
+          - patroni
+          - python-etcd
+        state: latest
+    - name: create Patroni directory
+      become: yes
+      file:
+        path: /etc/patroni
+        state: directory
+    - name: generate config-file patroni.yml
+      become: yes
+      template:
+        src: patroni.j2
+        dest: /etc/patroni/patroni.yml
+    - name: copy systemd service file
+      become: yes
+      copy:
+        src: patroni.service
+        dest: /usr/lib/systemd/system/patroni.service
+    - name: enable service etcd and ensure it is not masked on master-node
+      become: yes
+      systemd:
+        name: patroni
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      when: not {{ isSlave }}
+    - name: create replicator DB role
+      command: psql -U postgres CREATE ROLE replicator WITH LOGIN REPLICATION ENCRYPTED PASSWORD 'rep-pass';
+      when: not "{{ isSlave }}"
+    - name: create passwd file
+      become: yes
+      become_user: postgres
+      lineinfile:
+        path: /var/lib/postgresql/.pgpass
+        state: present
+        line: '*:*:*:replicator:rep-pass'
+        mode: 0600
+      when: not "{{ isSlave }}"
+    - name: start service etcd and ensure it is not masked on slave-nodes
+      become: yes
+      systemd:
+        name: patroni
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      when: "{{ isSlave }}"
