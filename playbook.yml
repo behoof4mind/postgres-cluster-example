@@ -1,14 +1,16 @@
 ---
 
 - name: Network Getting Started First Playbook
-  connection: network_cli
+  # connection: network_cli
   gather_facts: true
-  hosts: all
+  hosts: nodes
   tasks:
     - set_fact:
-        mask_cidr: "{{ ip | ipaddr('net') }}"
+        mask_cidr: "{{ ip | ipaddr('prefix') }}"
       vars:
         ip: "{{ ansible_default_ipv4.network }}/{{ ansible_default_ipv4.netmask }}"
+    - debug:
+        msg: "{{ hostvars['node1'].ansible_ssh_host }}/{{ mask_cidr }}"
     - name: install packages
       become: yes
       apt:
@@ -78,7 +80,7 @@
         state: absent
         path: /var/lib/postgresql/9.4/main
       # when: isSlave
-    - name: copying file pg_hba
+    - name: copy config-file pg_hba
       become: yes
       template:
         src: pg_hba.j2
@@ -90,9 +92,65 @@
         name: postgres
         groups: sudo
         append: yes
-    - name: cloning etcd project
-      git:
-        repo: 'https://github.com/etcd-io/etcd.git'
-        dest: /tmp/etcd/
-        version: v3.3.10
-
+    # - name: cloning etcd project
+    #   git:
+    #     repo: 'https://github.com/etcd-io/etcd.git'
+    #     dest: /tmp/etcd/
+    #     version: v3.3.10
+    - name: Extract etcd into /tmp/
+      unarchive:
+        src: https://github.com/etcd-io/etcd/releases/download/v3.3.10/etcd-v3.3.10-linux-amd64.tar.gz
+        dest: /tmp/
+        remote_src: yes
+    - name: copy etcd binary file
+      become: yes
+      copy:
+        src: /tmp/etcd-v3.3.10-linux-amd64/etcd
+        dest: /usr/local/bin/
+        mode: u+x,g+x,o+x
+    - name: copy etcdctl binary file
+      become: yes
+      copy:
+        src: /tmp/etcd-v3.3.10-linux-amd64/etcdctl
+        dest: /usr/local/bin/
+        mode: u+x,g+x,o+x
+    - name: create etcd directory
+      become: yes
+      file:
+        path: /etc/etcd
+        state: directory
+    - name: copy config-file etcd.conf
+      become: yes
+      template:
+        src: etcd.j2
+        dest: /etc/etcd/etcd.conf
+    - name: Add ctcd user
+      become: yes
+      user:
+        name: etcd
+        shell: /usr/sbin/nologin
+        home: /var/lib/etcd
+    - name: create systemd directory
+      become: yes
+      file:
+        path: /usr/lib/systemd/system/
+        state: directory
+    - name: copy systemd service file
+      become: yes
+      copy:
+        src: etcd.service
+        dest: /usr/lib/systemd/system/etcd.service
+    - name: force systemd to reread configs
+      become: yes
+      systemd:
+        name: etcd
+        daemon_reload: yes
+    - name: enable service etcd and ensure it is not masked
+      become: yes
+      systemd:
+        name: etcd
+        state: started
+        enabled: yes
+      register: etcd_status
+    - debug: msg="etcd is running"
+      when: etcd_status.stdout.find("running") != -1
