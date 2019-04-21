@@ -212,3 +212,41 @@
         enabled: yes
         daemon_reload: yes
       when: "{{ isSlave }}"
+    - name: install PgBouncer
+      become: yes
+      apt:
+        name: pgbouncer 
+        state: latest
+    - name: stop pgbouncer service
+      become: yes
+      systemd:
+        name: pgbouncer
+        state: stopped
+    - name: generating pgbouncer config-file
+      become: yes
+      template:
+        src: pgbouncer.j2
+        dest: /etc/pgbouncer/pgbouncer.ini
+    - name: creating pgbouncer userlist
+      become: yes
+      lineinfile:
+        dest: /etc/pgbouncer/userlist.txt
+        line: '"postgres" "postgres"'
+    - name: changing pgbouncer ulimit parameter
+      become: yes
+      lineinfile:
+        dest: /etc/init.d/pgbouncer
+        regexp: '^ulimit -n \d+'
+        line: 'ulimit -n 32768'
+    - name: start service pgbouncer and ensure it is not masked
+      become: yes
+      systemd:
+        name: pgbouncer
+        state: started
+        enabled: yes
+        daemon_reload: yes
+    - name: install PgBouncer
+      become: yes
+      apt:
+        name: pgbouncer 
+        state: latest
