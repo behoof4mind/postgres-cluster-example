@@ -1,0 +1,150 @@
+scope: pgcluster-tst
+name: {{ inventory_hostname }}
+ 
+restapi:
+  listen: {{ ansible_ssh_host }}:8008
+  connect_address: {{ ansible_ssh_host }}:8008
+ 
+etcd:
+  hosts: {{ hostvars['node1'].ansible_ssh_host }}:2379,{{ hostvars['node2'].ansible_ssh_host }}:2379,{{ hostvars['node3'].ansible_ssh_host }}:2379
+ 
+bootstrap:
+  # this section will be written into Etcd:/<namespace>/<scope>/config after initializing new cluster
+  # and all other cluster members will use it as a `global configuration`
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    master_start_timeout: 300
+    synchronous_mode: false
+     
+    postgresql:
+      use_pg_rewind: false
+      use_slots: true
+      parameters:
+        max_connections: 500
+        superuser_reserved_connections: 5
+        wal_level: hot_standby
+        hot_standby: "on"
+        wal_keep_segments: 16
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_log_hints: "on"
+        archive_mode: "on"
+        archive_timeout: 1800s
+        archive_command: cd .
+        shared_preload_libraries: 'pg_stat_statements,auto_explain'
+        pg_stat_statements.max: 10000
+        pg_stat_statements.track: 'all'
+        pg_stat_statements.save: off
+        auto_explain.log_min_duration: '10s'
+        auto_explain.log_analyze: 'true'
+        auto_explain.log_buffers: 'true'
+        auto_explain.log_timing: 'false'
+        auto_explain.log_triggers: 'true'
+        auto_explain.log_verbose: 'true'
+        auto_explain.log_nested_statements: 'true'
+        track_io_timing: on
+        log_lock_waits: on
+        log_temp_files: 0
+        track_activities: on
+        track_counts: on
+        track_functions: all
+        log_checkpoints: on
+        logging_collector: on
+        log_directory: '/var/log/postgresql'
+        log_filename: 'postgresql-%a.log'
+        log_truncate_on_rotation: on
+        log_rotation_age: 1d
+        log_rotation_size: 0
+        log_line_prefix: '%t [%p-%l] %r %q%u@%d '
+#        huge_pages: 'on'
+#        shared_buffers: 4GB
+#        effective_cache_size: 12GB
+#        maintenance_work_mem: 1GB
+#        work_mem: 64MB
+        checkpoint_timeout: 15min
+        checkpoint_segments: 64
+        checkpoint_completion_target: 0.9
+        wal_buffers: 32MB
+        default_statistics_target: 1000
+        random_page_cost: 4
+        effective_io_concurrency: 2
+        autovacuum: on
+        autovacuum_max_workers: 5
+        autovacuum_vacuum_scale_factor: 0.01
+        autovacuum_analyze_scale_factor: 0.02
+        autovacuum_naptime: 1s
+        max_files_per_process: 4096
+ 
+#      recovery_conf:
+#        restore_command: cp ../wal_archive/%f %p
+ 
+  # some desired options for 'initdb'
+  initdb:
+  - encoding: UTF8
+#  - data-checksums
+ 
+#  pg_hba:  # Add following lines to pg_hba.conf after running 'initdb'
+#  - host replication replicator 127.0.0.1/32 md5
+#  - host all all 0.0.0.0/0 md5
+ 
+  # Additional script to be launched after initial cluster creation (will be passed the connection URL as parameter)
+# post_init: /usr/local/bin/setup_cluster.sh
+ 
+  # Some additional users users which needs to be created after initializing new cluster
+  users:
+    replicator:
+      password: rep-pass
+      options:
+        - replication
+ 
+postgresql:
+  listen: {{ ansible_ssh_host }}:5432
+  connect_address: {{ ansible_ssh_host }}:5432
+  use_unix_socket: true
+  data_dir: /var/lib/postgresql/9.4/main/
+  bin_dir: /usr/lib/postgresql/9.4/bin/
+  config_dir: /etc/postgresql/9.4/main/
+  pgpass: /var/lib/postgresql/.pgpass
+  authentication:
+    replication:
+      username: replicator
+      password: rep-pass
+    superuser:
+      username: postgres
+      password: postgres
+  parameters:
+    unix_socket_directories: /var/run/postgresql
+#    stats_temp_directory: /var/lib/pgsql_stats_tmp
+ 
+#  callbacks:
+#    on_start:
+#    on_stop:
+#    on_restart:
+#    on_reload:
+#    on_role_change:
+ 
+  create_replica_methods:
+#  - pgbackrest
+   - basebackup
+#  pgbackrest:
+#    command: /usr/bin/pgbackrest --stanza=mydb --delta restore
+#    keep_data: True
+#    no_params: True
+  basebackup:
+    max-rate: '100M'
+ 
+#watchdog:
+#  mode: automatic # Allowed values: off, automatic, required
+#  device: /dev/watchdog
+#  safety_margin: 5
+ 
+tags:
+    nofailover: false
+    noloadbalance: false
+    clonefrom: false
+    nosync: false
+# specify a node to replicate from. This can be used to implement a cascading replication.
+#    replicatefrom: (node name)

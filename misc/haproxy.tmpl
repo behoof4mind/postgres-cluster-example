@@ -1,0 +1,66 @@
+global
+    maxconn 10000
+    log /dev/log    local0
+    log /dev/log    local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
+ 
+ 
+defaults
+    mode               tcp
+    log                global
+    retries            2
+    timeout queue      5s
+    timeout connect    5s
+    timeout client     1d
+    timeout server     1d
+    timeout check      15s
+     
+listen stats
+    mode http
+    bind *:7000
+    stats enable
+    stats uri /
+ 
+listen master
+    bind *:5000
+    option tcplog
+    option httpchk OPTIONS /master
+    http-check expect status 200
+    default-server inter 3s fastinter 1s fall 3 rise 4 on-marked-down shutdown-sessions
+{{range gets "/members/*"}} server {{base .Key}} {{$data := json .Value}}{{base (replace (index (split (index (split $data.conn_url ":") 1) "/") 2) "@" "/" -1)}}:6432 check port {{index (split (index (split $data.api_url "/") 2) ":") 1}}
+{{end}}
+ 
+listen replicas
+    bind *:5001
+    option tcplog
+    option httpchk OPTIONS /replica
+    balance roundrobin
+    http-check expect status 200
+    default-server inter 3s fastinter 1s fall 3 rise 2 on-marked-down shutdown-sessions
+{{range gets "/members/*"}} server {{base .Key}} {{$data := json .Value}}{{base (replace (index (split (index (split $data.conn_url ":") 1) "/") 2) "@" "/" -1)}}:6432 check port {{index (split (index (split $data.api_url "/") 2) ":") 1}}
+{{end}}
+ 
+listen replicas_sync
+    bind *:5002
+    option tcplog
+    option httpchk OPTIONS /sync
+    balance roundrobin
+    http-check expect status 200
+    default-server inter 3s fastinter 1s fall 3 rise 2 on-marked-down shutdown-sessions
+{{range gets "/members/*"}} server {{base .Key}} {{$data := json .Value}}{{base (replace (index (split (index (split $data.conn_url ":") 1) "/") 2) "@" "/" -1)}}:6432 check port {{index (split (index (split $data.api_url "/") 2) ":") 1}}
+{{end}}
+ 
+listen replicas_async
+    bind *:5003
+    option tcplog
+    option httpchk OPTIONS /async
+    balance roundrobin
+    http-check expect status 200
+    default-server inter 3s fastinter 1s fall 3 rise 2 on-marked-down shutdown-sessions
+{{range gets "/members/*"}} server {{base .Key}} {{$data := json .Value}}{{base (replace (index (split (index (split $data.conn_url ":") 1) "/") 2) "@" "/" -1)}}:6432 check port {{index (split (index (split $data.api_url "/") 2) ":") 1}}
+{{end}}

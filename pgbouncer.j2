@@ -5,7 +5,7 @@
 [pgbouncer]
 logfile = /var/log/postgresql/pgbouncer.log
 pidfile = /var/run/postgresql/pgbouncer.pid
-listen_addr = {{ ansible_ssh_host }}
+listen_addr = *
 listen_port = 6432
 auth_type = md5
 auth_file = /etc/pgbouncer/userlist.txt

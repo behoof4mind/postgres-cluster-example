@@ -1,9 +1,0 @@
-
-backend = "etcd"
-interval = 10
-watch = true
-nodes = [
-  "http://{{ hostvars['node1'].ansible_ssh_host }}:2379",
-  "http://{{ hostvars['node2'].ansible_ssh_host }}:2379",
-  "http://{{ hostvars['node3'].ansible_ssh_host }}:2379",
-]

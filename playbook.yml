@@ -1,9 +1,10 @@
 ---
 
-- name: Network Getting Started First Playbook
+- name: postgres-cluster-example
   # connection: network_cli
   gather_facts: true
   hosts: nodes
+  become: yes
   tasks:
     - set_fact:
         mask_cidr: "{{ ip | ipaddr('prefix') }}"
@@ -21,12 +22,12 @@
           - less
           - policykit-1
         state: latest
-    - name: Add an PostgreSQL apt signing key
+    - name: add an PostgreSQL apt signing key
       become: yes
       apt_key:
         url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
         state: present
-    - name: Add PostgreSQL repo
+    - name: add PostgreSQL repo
       become: yes
       apt_repository:
         repo: deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main
@@ -36,7 +37,7 @@
         name: Europe/Moscow
       become: yes
       become_method: sudo
-    - name: Ensure a ru_RU.UTF-8 locale exists
+    - name: ensure a ru_RU.UTF-8 locale exists
       locale_gen:
         name: ru_RU.UTF-8
         state: present
@@ -66,13 +67,12 @@
       service:
         name: postgresql
         state: stopped
-    - name: Clean artifact path on slave
+    - name: clean artifact path on slave
       become: yes
       file:
         state: absent
         path: /var/lib/postgresql/9.4/main
-      when: "{{ isSlave }}"
-    - name: copy config-file pg_hba
+    - name: generate config-file pg_hba
       become: yes
       template:
         src: pg_hba.j2
@@ -84,7 +84,7 @@
         name: postgres
         groups: sudo
         append: yes
-    - name: Extract etcd into /tmp
+    - name: extract etcd into /tmp
       unarchive:
         src: https://github.com/etcd-io/etcd/releases/download/v3.3.10/etcd-v3.3.10-linux-amd64.tar.gz
         dest: /tmp/
@@ -115,7 +115,7 @@
       template:
         src: etcd.j2
         dest: /etc/etcd/etcd.conf
-    - name: Add ctcd user
+    - name: add ctcd user
       become: yes
       user:
         name: etcd
@@ -175,7 +175,10 @@
       copy:
         src: patroni.service
         dest: /usr/lib/systemd/system/patroni.service
-    - name: enable service etcd and ensure it is not masked on master-node
+    - name: alter postgres DB pwd
+      command: psql -U postgres -c "ALTER ROLE postgres WITH ENCRYPTED PASSWORD 'postgres';"
+      when: not "{{ isSlave }}"
+    - name: enable service patroni and ensure it is not masked on master-node
       become: yes
       systemd:
         name: patroni
@@ -183,9 +186,26 @@
         enabled: yes
         daemon_reload: yes
       when: not {{ isSlave }}
-    - name: create replicator DB role
-      command: psql -U postgres CREATE ROLE replicator WITH LOGIN REPLICATION ENCRYPTED PASSWORD 'rep-pass';
-      when: not "{{ isSlave }}"
+
+    # - name: Execute the command in remote shell; stdout goes to the specified file on the remote.
+    #   become: yes
+    #   shell: |
+    #     set timeout 300
+    #     spawn patronictl -c /etc/patroni/patroni.yml restart pgcluster-tst {{ inventory_hostname }}
+
+    #     expect "Are you sure you want to restart members {{ inventory_hostname }}? [y/N]:"
+    #     send "y\r"
+
+    #     expect "Restart if the PostgreSQL version is less than provided (e.g. 9.5.2)  []:"
+    #     send "\r"
+
+    #     expect "When should the restart take place (e.g. 2015-10-01T14:30)  [now]:"
+    #     send "\r"
+
+    #     exit 0
+    #   args:
+    #     executable: /usr/bin/expect
+    #   when: not {{ isSlave }}
     - name: create passwd file
       become: yes
       become_user: postgres
@@ -195,7 +215,7 @@
         line: '*:*:*:replicator:rep-pass'
         mode: 0600
       when: not "{{ isSlave }}"
-    - name: start service etcd and ensure it is not masked on slave-nodes
+    - name: start patroni service and ensure it is not masked on slave-nodes
       become: yes
       systemd:
         name: patroni
@@ -236,62 +256,50 @@
         state: started
         enabled: yes
         daemon_reload: yes
-    # - name: install HAProxy
-    #   become: yes
-    #   apt:
-    #     name: haproxy 
-    #     state: latest
-    # - name: start service haproxy and ensure it is not masked
-    #   become: yes
-    #   systemd:
-    #     name: haproxy
-    #     state: started
-    #     enabled: yes
-    # - name: downloading confd binary file
-    #   get_url:
-    #     url: https://github.com/kelseyhightower/confd/releases/download/v0.16.0/confd-0.16.0-linux-amd64
-    #     dest: /tmp/confd
-    # - name: copy confd binary file to /usr/local/bin
-    #   become: yes
-    #   become_method: sudo
-    #   copy:
-    #     src: /tmp/confd
-    #     dest: /usr/local/bin/confd
-    #     mode: u+x,g+x,o+x
-    #     remote_src: yes
-    # - name: create confd directory structure
-    #   become: yes
-    #   file:
-    #     state: directory
-    #     path: "{{ item }}"
-    #   with_items:
-    #     - '/etc/confd/conf.d'
-    #     - '/etc/confd/templates'
-    # - name: generating confd config-file
-    #   become: yes
-    #   template:
-    #     src: confd.j2
-    #     dest: /etc/confd/confd.toml
-    # - name: copy haproxy.toml config-file
-    #   become: yes
-    #   copy:
-    #     src: haproxy.toml
-    #     dest: /etc/confd/conf.d/haproxy.toml
-    # - name: copy haproxy.tmpl template-file
-    #   become: yes
-    #   become_method: sudo
-    #   copy:
-    #     src: haproxy.tmpl
-    #     dest: /etc/confd/templates/haproxy.tmpl
-    # - name: copy confd systemd service file
-    #   become: yes
-    #   copy:
-    #     src: confd.service
-    #     dest: /usr/lib/systemd/system/confd.service
-    # - name: start service confd and ensure it is not masked
-    #   become: yes
-    #   systemd:
-    #     name: confd
-    #     state: started
-    #     enabled: yes
-    #     daemon_reload: yes
+    - name: allow a running load balancer instance to bind to an IP that is not local for failover
+      become: yes
+      sysctl:
+        name: net.ipv4.ip_nonlocal_bind
+        value: 1
+        sysctl_set: yes
+        state: present
+        reload: yes
+    - name: ip forwarding turn on in the kernel
+      become: yes
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: 1
+        sysctl_set: yes
+        state: present
+        reload: yes
+    - set_fact:
+        VIP_IP: "{{ ansible_ssh_host.split('.')[0] }}.{{ ansible_ssh_host.split('.')[1] }}.{{ ansible_ssh_host.split('.')[2] }}.{{ ansible_ssh_host.split('.')[3] | int + IPFactor }}"
+    - name: comparison VIP_IP and real IP
+      any_errors_fatal: true
+      fail: msg="Please change variable IPFactor. Real and virtual IP adresses are equal"
+      when: ansible_ssh_host == VIP_IP
+    - name: generating vip-manager config-file
+      become: yes
+      template:
+        src: vip.j2
+        dest: /etc/patroni/vip.conf
+    - name: copy vip-manager binary file to /usr/bin/
+      become: yes
+      become_method: sudo
+      copy:
+        src: vip-manager
+        dest: /usr/bin/vip-manager
+        mode: u+x,g+x,o+x
+        # remote_src: yes
+    - name: copy vip-manager systemd service file
+      become: yes
+      copy:
+        src: vip-manager.service
+        dest: /usr/lib/systemd/system/vip-manager.service
+    - name: start vip-manager service and ensure it is not masked
+      become: yes
+      systemd:
+        name: vip-manager
+        state: started
+        enabled: yes
+        daemon_reload: yes
